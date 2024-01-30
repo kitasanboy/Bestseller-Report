@@ -1,0 +1,288 @@
+This is the SQL code and the Python code used to ultimately create the Excel file used as a database for this project.
+
+SQL CODE
+
+SELECT	
+	CONCAT(au.auction_number, "/", au.txnid) AS "Auftrag number / txnid"
+,	au.auction_number AS "Auftrag number"
+,	au.saved_id AS "SA ID"
+,	au.end_time AS "Auftrag end time"
+,	o.article_id AS "Article ID"
+,	au.main_auction_number AS "Main auftrag"
+,	ac.purchase_price AS 'Purchase price'
+,	ac.purchase_price * ac.curr_rate AS 'Purchase Price Adjusted'
+,	o.quantity AS "Total no of articles"
+,	IF(au.deleted=1 or mau.deleted=1, "yes", "no") as 'Deleted Auftrag'
+,	IF(au.deleted=1 and a_del.name is null,'other reason',a_del.name) as 'Delete reason'
+,	CONCAT("https://www.prologistics.info/auction.php?number=", au.main_auction_number,"&txnid=",au.txnid) AS "URL Main auftrag"
+,	IF(au.source_seller_id = 0
+	,	au.username
+	,	IF(ss.username= ' '
+	,	ss.name,ss.username)) AS "Seller"
+,	IF(au.source_seller_id=0
+	,	si.seller_name
+	,	ss.name) AS "Source seller"
+,	IF(
+		IF(au.source_seller_id = 0
+		,	mau.source_seller_id
+		,	au.source_seller_id) = 0
+	,	si.country
+	,	IF(ss.calc_country_code = ''
+		,	IF(si.defshcountry = ''
+			,	si.country
+			,	si.defshcountry)
+		,	ss.calc_country_code)) AS "Calculation Country"
+
+
+,	IFNULL(ROUND((IFNULL(ac.price_sold, 0) 
+		- IFNULL(ac.ebay_listing_fee, 0) 
+		- IFNULL(ac.additional_listing_fee, 0) 
+		- IFNULL(ac.ebay_commission, 0) 
+		- IFNULL(ac.vat, 0) 
+		- IF(au.resell,0, IFNULL(ac.purchase_price, 0)) 
+		+ IF(a.admin_id = 4, IFNULL(i.total_shipping, IFNULL(ac.shipping_cost, 0)),0) 
+		- IFNULL(ac.effective_shipping_cost, 0) 
+		+ IF(a.admin_id = 4, IFNULL(i.total_cod, IFNULL(ac.COD_cost, 0)) 
+		- IFNULL(ac.effective_COD_cost, 0), 0) 
+		- IFNULL(ac.packing_cost, 0) 
+		/ IFNULL(ac.curr_rate, 0) - IFNULL(ac.vat_shipping, 0) 
+		- IFNULL(ac.vat_COD, 0)) 
+		* ac.curr_rate, 2),  0) AS "Brutto Income (EUR)"
+		
+,	IFNULL(ROUND(((ac.price_sold 
+		- ac.vat 
+		+ (ac.shipping_cost 
+		- ac.vat_shipping) 
+		+ (ac.COD_cost - ac.vat_COD) 
+		+ IF(a.admin_id = 3,
+		- IF(au.resell, 0, IFNULL(ac.purchase_price, 0)), 0)) 
+		* ac.curr_rate), 2), 0) AS "Revenue (EUR)"
+
+,        CONCAT('https://www.prologistics.info/react/condensed/condensed_sa/',IFNULL(sa.master_sa, sa.id),'/slave/',sa.id,'/shop/Beliani%20'
+        ,                IFNULL( IF(IF(au.source_seller_id = 0,mau.source_seller_id,au.source_seller_id) = 0,si.country
+        ,                IF(ss.calc_country_code = ''
+        ,                IF(si.defshcountry = ''
+        ,                si.country
+        ,                si.defshcountry)
+        ,                ss.calc_country_code)),'' ),'/beliani.'
+        , IFNULL( IF(IF(au.source_seller_id = 0,mau.source_seller_id,au.source_seller_id) = 0,si.country
+        ,                IF(ss.calc_country_code = ''
+        ,                IF(si.defshcountry = ''
+        ,                si.country
+        ,                si.defshcountry)
+        ,                ss.calc_country_code)),' ' )) AS 'SA URL'
+ /*       
+# Article Stock merge 
+,	t.value AS 'Article Name'     
+,	IF(a.wpicture_URL = '',CONCAT("https://www.prologistics.info",a.picture_URL),CONCAT("https://www.prologistics.info",a.wpicture_URL)) AS "URL article pic"
+,	CONCAT('https://www.prologistics.info/article.php?original_article_id=', a.article_id , 'order=name') AS 'URL Article'
+, 	oc.name AS Supplier
+,	a.group_id AS "Article Group ID"
+,	(
+	SELECT `prologis2`.`fget_Article_stock`
+		( a.article_id,"0")
+	) AS Stock
+	
+,	(
+	SELECT `prologis2`.`fget_Article_Reserved`
+		(a.article_id,"0")
+	) AS Reserved
+	
+,	(
+	SELECT CONCAT(TRIM(name), " ", TRIM(name2)) 'Name'
+    FROM op_company_emp oce
+    
+    LEFT JOIN employee e 
+    ON e.id = oce.emp_id
+    
+    WHERE
+    oce.type = 'purch'
+	and oce.emp_id > 0
+	and oce.company_id = a.company_id
+	AND e.inactive = 0
+    
+    order by oce.id desc
+    LIMIT 1
+    ) AS 'Product Manager'
+    */
+FROM orders o
+
+JOIN auction au ON (au.auction_number=o.auction_number
+AND au.txnid=o.txnid)
+
+LEFT JOIN
+auction_calcs ac ON o.id = ac.order_id
+
+LEFT JOIN
+saved_auctions sa ON au.saved_id = sa.id
+    
+LEFT JOIN
+invoice i ON i.invoice_number = au.invoice_number
+
+JOIN
+article a ON a.article_id = o.article_id
+
+LEFT JOIN
+auction mau ON (mau.auction_number = au.main_auction_number
+    AND mau.txnid = au.main_txnid)
+    
+LEFT JOIN
+source_seller ss ON ss.id = IFNULL(mau.source_seller_id,au.source_seller_id)
+
+LEFT JOIN 
+seller_information si ON au.username = si.username
+
+LEFT JOIN
+    auction_delete_reason a_del
+    ON au.delete_reason_id=a_del.id
+  /*  
+# Article Stock merge 
+LEFT JOIN translation t ON t.id = a.article_id
+    AND t.field_name_id = 8
+    AND t.table_name_id = 50
+    AND t.language = 'english'
+
+LEFT JOIN op_company oc ON oc.id = a.company_id
+*/
+WHERE au.end_time > "2017-12-31 23:59:59"
+	AND IF(mau.rma_id IS NULL, au.rma_id,mau.rma_id) = 0 
+	AND a.admin_id = 0
+	AND o.manual = 0 
+
+	-- 	AND au.saved_id BETWEEN 20000 and 30000
+		
+GROUP BY o.id
+
+SELECT  a.article_id AS "Article ID"
+, CASE
+	WHEN a.cons_id IS NULL OR a.cons_id = 0 THEN a.article_id
+	ELSE CONCAT(a.cons_id, '_c')
+END 'Cons Fix'
+,	t.value AS 'Article Name'
+,	IF(a.wpicture_URL = '',CONCAT("https://www.prologistics.info",a.picture_URL),CONCAT("https://www.prologistics.info",a.wpicture_URL)) AS "URL article pic"
+,	CONCAT('https://www.prologistics.info/article.php?original_article_id=', a.article_id , 'order=name') AS 'URL Article'
+, 	oc.name AS Supplier
+,	a.group_id AS "Article Group ID"
+-- ,	IF(eolif0 = 1, "Yes", "No") AS EOL
+,	(
+	SELECT `prologis2`.`fget_Article_stock`
+		( a.article_id,"0")
+	) AS Stock
+	
+,	(
+	SELECT `prologis2`.`fget_Article_Reserved`
+		(a.article_id,"0")
+	) AS Reserved
+	
+,	(
+	SELECT CONCAT(TRIM(name), " ", TRIM(name2)) 'Name'
+    FROM op_company_emp oce
+    
+    LEFT JOIN employee e 
+    ON e.id = oce.emp_id
+    
+    WHERE
+    oce.type = 'purch'
+	and oce.emp_id > 0
+	and oce.company_id = a.company_id
+	AND e.inactive = 0
+    
+    order by oce.id desc
+    LIMIT 1
+    ) AS 'Product Manager'
+
+FROM article a
+
+LEFT JOIN translation t ON t.id = a.article_id
+    AND t.field_name_id = 8
+    AND t.table_name_id = 50
+    AND t.language = 'english'
+
+LEFT JOIN op_company oc ON oc.id = a.company_id
+
+WHERE   a.admin_id=0 
+   AND 	a.article_id<>0  
+
+
+PYTHON CODE
+
+pip install mysql-connector-python
+
+
+import mysql.connector  as connection
+import pandas as pd
+import numpy as np
+
+# Creation of directory variables
+
+files_dir = 'C:\\Bestseller\\Files\\'
+sql_dir = 'C:\\Bestseller\\SQL\\'
+
+# Fetching data from the database
+
+with open(files_dir + 'db_credentials.txt', 'r') as f:
+    db_credentials = f.read().splitlines()
+
+try:
+    db_connections = connection.connect(
+        host=db_credentials[0],
+        user=db_credentials[1],
+        password=db_credentials[2],
+        database=db_credentials[3]
+    )
+        # loading sales_ratio
+    print("loading sales_ratio ...")
+    sales_ratio_NEW_curr_NEW = open(sql_dir + 'sales ratio NEW curr NEW.sql')
+    sales_ratio_NEW__curr_NEW_query = sales_ratio_NEW_curr_NEW.read()
+    sales_ratio = pd.read_sql(sales_ratio_NEW_curr_NEW_query,db_connections)
+    print('sales_ratio is ready')
+
+    # close the connection
+    db_connections.close()  
+    print('MySQL query is loaded and db_connections is closed ')
+except Exception as e:
+    db_connections.close()
+    print(str(e))
+
+# Fetching data from the database
+
+try:
+    db_connections = connection.connect(
+        host=db_credentials[0],
+        user=db_credentials[1],
+        password=db_credentials[2],
+        database=db_credentials[3]
+    )
+        # loading article_stock
+    print("loading article_stock ...")
+    article_stock_NEW = open(sql_dir + '01_Article stock/Article Stock NEW.sql')
+    article_stock_NEW_query = article_stock_NEW.read()
+    article_stock = pd.read_sql(article_stock_NEW_query,db_connections)
+    print('article_stock is ready')
+
+    # close the connection
+    db_connections.close()  
+    print('MySQL query is loaded and db_connections is closed ')
+except Exception as e:
+    db_connections.close()
+    print(str(e))
+
+# Joining dataframes
+
+merged_df = pd.merge(sales_ratio, article_stock, on='Article ID', how='outer')
+
+# Data transfrmations
+
+merged_df['Available stock (for understock)'] = merged_df.Stock - merged_df.Reserved
+merged_df.dropna(how='any', subset='SA ID', inplace=True)
+merged_df = merged_df.astype(str)
+merged_df[['Auftrag number', 'Main auftrag','SA ID','Total no of articles','Article Group ID']] = merged_df[['Auftrag number', 'Main auftrag','SA ID','Total no of articles','Article Group ID']].replace(r'\.0', '', regex=True)
+merged_df.replace( 'nan', '', inplace=True)
+merged_df.replace( 'None', '', inplace=True)
+merged_df.replace( 'NaT', '', inplace=True)
+
+# Save the result into csv
+
+merged_df.to_csv(files_dir + 'sales_ratio_merged.csv', index=False, encoding='utf-8', mode='w')
+
+Unfortunately, the Power BI file is too large to be uploaded on github so I am currently working on a solution to upload it someplace else.
